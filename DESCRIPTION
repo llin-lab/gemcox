@@ -1,0 +1,33 @@
+Package: gemcox
+Title: Gaussian Mixture of Cox Models for Mechanism Subgroups
+Version: 0.3.0
+Authors@R: 
+    person("Ziwei", "Zhao", email = "zhaoziwe@gmail.com", role = c("aut", "cre"))
+Description: Fits a Gaussian mixture of Cox proportional hazards models
+    ('GeM-Cox') to find latent subgroups whose survival mechanisms differ.
+    Clustering features follow a Gaussian mixture with diagonal covariance;
+    each subgroup has its own Cox coefficient vector over a shared Breslow
+    baseline hazard. Estimation is by an EM algorithm whose E-step weights
+    the survival likelihood by a fixed exponent gamma. Membership weights for
+    new subjects are computed from the clustering features only. Two
+    subgroups are tested against one by an in-sample likelihood ratio
+    calibrated by a parametric bootstrap; a cross-validated partial
+    likelihood statistic (Verweij and van Houwelingen, 1993,
+    <doi:10.1002/sim.4780122407>) is also available. A step-by-step workflow
+    (read_data(), fit_model(), runCV(), finalModel(), plot_beta_heatmap())
+    follows the GeMLR package.
+License: MIT + file LICENSE
+Encoding: UTF-8
+LazyData: true
+Roxygen: list(markdown = TRUE)
+Config/roxygen2/version: 8.0.0
+Depends: R (>= 4.1.0)
+Imports: glmnet, graphics, grDevices, MASS, stats, survival, tools,
+        utils
+Suggests: knitr, mclust, rmarkdown, readxl, testthat (>= 3.0.0), withr
+Config/testthat/edition: 3
+VignetteBuilder: knitr
+NeedsCompilation: no
+Packaged: 2026-10-07 16:37:05 UTC; zhaoziwei
+Author: Ziwei Zhao [aut, cre]
+Maintainer: Ziwei Zhao <zhaoziwe@gmail.com>

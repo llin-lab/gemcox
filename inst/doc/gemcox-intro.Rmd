@@ -1,0 +1,153 @@
+---
+title: "Introduction to gemcox"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Introduction to gemcox}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>", fig.width = 7, fig.height = 3.5)
+```
+
+GeM-Cox looks for latent subgroups of subjects whose **survival mechanisms**
+differ: the same immune markers relate to the hazard differently in
+different people. It combines a Gaussian mixture for clustering features
+with a separate Cox model in each subgroup, all sharing one baseline hazard,
+so subgroups differ only in their coefficient vectors. This vignette fits the
+model to one simulated dataset, looks at what it estimates, and tests
+whether two subgroups are needed.
+
+```{r setup}
+library(gemcox)
+```
+
+## Simulated data
+
+`gemcox_simulate()` generates two equally likely latent clusters. Their
+feature profiles are `mu_sep` apart and their Cox coefficient vectors are
+`beta_sep` apart; the two coefficient vectors have equal length, so a
+different mechanism is never confounded with a stronger effect. Here the
+profiles overlap substantially (`mu_sep = 0.5`) and the mechanisms differ
+clearly (`beta_sep = 2`).
+
+```{r data}
+d <- gemcox_simulate(n = 400, p = 6, mu_sep = 0.5, beta_sep = 2, seed = 42)
+dim(d$X)
+mean(d$status)          # proportion of subjects with an event
+```
+
+## Fitting the model
+
+The defaults are the settings validated in the package simulations: K = 2,
+`gamma = 1`, a small ridge penalty (`lambda = 0.05`, `alpha = 0`), a shared
+baseline, diagonal covariance, and k-means initialisation.
+
+```{r fit}
+fit <- gemcox(d$X, time = d$time, status = d$status, K = 2)
+fit
+```
+
+## Membership weights
+
+Each subject gets a weight `tau` for each cluster rather than a hard label.
+Here the weights are soft: most subjects are not confidently assigned.
+
+```{r tau}
+head(round(fit$tau, 3))
+hist(apply(fit$tau, 1, max), breaks = 20, xlim = c(0.5, 1),
+     main = "Largest membership weight per subject", xlab = "max tau")
+```
+
+This is expected. When subgroups differ mainly in mechanism, a single
+subject's data carries little evidence about which subgroup they belong to,
+and that evidence does not grow with the sample size. Individual labels
+are therefore not the target of estimation; the **difference between the
+subgroups' coefficient vectors** is.
+
+## The two coefficient vectors
+
+```{r coef}
+round(coef(fit), 3)
+contrast_hat  <- coef(fit)[, 1] - coef(fit)[, 2]
+contrast_true <- d$beta_list[[1]] - d$beta_list[[2]]
+## direction of the estimated contrast vs the truth (sign is arbitrary)
+abs(sum(contrast_hat * contrast_true)) /
+  sqrt(sum(contrast_hat^2) * sum(contrast_true^2))
+```
+
+`summary()` shows the coefficients next to their contrast, together with
+mixing proportions, effective numbers of events per cluster and
+convergence.
+
+```{r summary}
+summary(fit)
+```
+
+## Is a second subgroup needed?
+
+`gemcox_heterogeneity_test()` tests K = 2 against K = 1, where the null
+hypothesis is one mechanism with a shared coefficient vector. Its default
+statistic is the likelihood ratio of the two fits, and its null
+distribution comes from a parametric bootstrap under the fitted K = 1 model:
+event times are resimulated from that model, censoring from its
+Kaplan-Meier estimate, and both models are refitted each time.
+
+The likelihood ratio requires `gamma = 1` (the default). For speed this
+example uses only `B = 19` bootstrap replicates, which is enough to show
+the call but gives a coarse p-value; use at least 200 in practice.
+
+```{r test}
+ht <- gemcox_heterogeneity_test(fit, B = 19, seed = 1)
+ht
+```
+
+In the package simulations (n = 400-800, p = 10), this test:
+- rejected at close to the nominal 5% under the null;
+- had 30-57% power when the mechanisms differed by `beta_sep = 2`.
+
+Those simulations used the earlier EM setting (`tol = 1e-4`,
+`max_iter = 100`). Calibration at the current default (`tol = 1e-8`,
+`max_iter = 1000`) has not yet been established, so treat these figures
+as provisional. Power is modest with few events, so a non-significant
+result is inconclusive: it does not show that the mechanisms are the
+same.
+
+## What gamma does
+
+When GeM-Cox decides how strongly a subject belongs to each subgroup, it
+combines two kinds of evidence: how the subject's markers compare with each
+subgroup's typical profile, and how well each subgroup's survival model
+explains what actually happened to the subject. `gamma` sets how much the
+second kind of evidence counts.
+
+* `gamma = 0` uses the markers only. Subgroups that differ in mechanism but
+  not in marker profile are then invisible, however large the data.
+* `gamma = 1` (the default) weights the outcome exactly as the joint
+  probability model does. This is what lets the mechanism difference
+  be recovered.
+* Larger values make the outcome dominate and can create subgroups that
+  are not there.
+
+`gamma` is fixed at 1 rather than tuned: in simulation, data-driven choices
+either pushed it to 0, losing the signal, or inflated false discoveries.
+
+## Predicting for new subjects
+
+A new subject's outcome is unknown, so their membership weights come from
+their markers alone.
+
+```{r predict}
+new <- gemcox_simulate(n = 3, p = 6, mu_sep = 0.5, beta_sep = 2, seed = 7)
+predict(fit, new$X, type = "tau")
+predict(fit, new$X, type = "survival", times = c(50, 150, 300))
+```
+
+## When to use GeM-Cox
+
+GeM-Cox is most useful when marker profiles overlap between subgroups but
+are not identical, and survival mechanisms differ. Its advantage over a
+single Cox model or a cluster-then-fit approach grows with the number of
+events and shrinks as the number of features grows relative to the events.
+Two subgroups (K = 2) is the validated setting.
